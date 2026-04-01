@@ -13,6 +13,7 @@ import {
   CREDIT_LIMIT,
   DEALBREAKER_CREDITS,
   FIT_CREDITS,
+  FULL_V8_PIPELINE_CREDITS,
   GAP_CREDITS,
   STARTING_CREDITS,
 } from "@/lib/engine-credits"
@@ -57,6 +58,8 @@ function applyGapPrerequisiteChain(opp: Opportunity): Opportunity {
   return o
 }
 
+export type CreateOpportunityEngineMode = "dealbreaker-only" | "full-v8"
+
 type OpportunitiesContextValue = {
   opportunities: Opportunity[]
   projects: ProjectRow[]
@@ -64,7 +67,11 @@ type OpportunitiesContextValue = {
   creditLimit: number
   setCredits: (n: number | ((c: number) => number)) => void
   getOpportunity: (id: string) => Opportunity | undefined
-  createOpportunityFromRfp: () => void
+  /** Creates an opportunity from upload, deducts credits, runs selected engines. */
+  createOpportunityWithEngineRuns: (
+    fileName: string,
+    mode: CreateOpportunityEngineMode
+  ) => boolean
   deleteOpportunity: (id: string) => void
   convertOpportunityToProject: (id: string) => void
   updateOpportunity: (id: string, updater: (o: Opportunity) => Opportunity) => void
@@ -100,38 +107,58 @@ export function OpportunitiesProvider({ children }: { children: ReactNode }) {
     []
   )
 
-  const createOpportunityFromRfp = useCallback(() => {
-    const now = new Date()
-    const idSuffix = `${now.getTime()}`.slice(-4)
-    const newOpportunity: Opportunity = {
-      opportunityId: `opp-${idSuffix}`,
-      title: `Uploaded RFP ${idSuffix}.pdf`,
-      createdOn: now.toLocaleDateString("en-US", {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      }),
-      linkedProjectName: null,
-      dealbreaker: "Pending",
-      dealbreakerNotes: ["Awaiting dealbreaker screening before fit assessment"],
-      fitScore: null,
-      fitBreakdown: "Run Fit & Alignment Engine after dealbreaker GO",
-      fitHighlights: [],
-      gapCount: 0,
-      highSeverityCount: 0,
-      mitigationActions: [],
-      gapList: [],
-      gapItems: [],
-      gapActions: [],
-      strategyRecommendation: null,
-      gapSummary: null,
-      fitEngineStatus: "idle",
-      gapEngineStatus: "idle",
-      decision: "Pending",
-      dealbreakers: [],
-    }
-    setOpportunities((previous) => [newOpportunity, ...previous])
-  }, [])
+  const createOpportunityWithEngineRuns = useCallback(
+    (fileName: string, mode: CreateOpportunityEngineMode) => {
+      const cost =
+        mode === "dealbreaker-only"
+          ? DEALBREAKER_CREDITS
+          : FULL_V8_PIPELINE_CREDITS
+      if (credits < cost) return false
+
+      const now = new Date()
+      const idSuffix = `${now.getTime()}`.slice(-4)
+      const title =
+        fileName.trim() || `Opportunity-${idSuffix}`
+      const newOpportunity: Opportunity = {
+        opportunityId: `opp-${idSuffix}`,
+        title,
+        createdOn: now.toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        }),
+        linkedProjectName: null,
+        dealbreaker: "Pending",
+        dealbreakerNotes: ["Awaiting dealbreaker screening before fit assessment"],
+        fitScore: null,
+        fitBreakdown: "Run Fit & Alignment Engine after dealbreaker GO",
+        fitHighlights: [],
+        gapCount: 0,
+        highSeverityCount: 0,
+        mitigationActions: [],
+        gapList: [],
+        gapItems: [],
+        gapActions: [],
+        strategyRecommendation: null,
+        gapSummary: null,
+        fitEngineStatus: "idle",
+        gapEngineStatus: "idle",
+        decision: "Pending",
+        dealbreakers: [],
+      }
+
+      setCredits((c) => c - cost)
+      setOpportunities((previous) => {
+        const next =
+          mode === "dealbreaker-only"
+            ? runDealbreakerScreening(newOpportunity)
+            : applyGapPrerequisiteChain(newOpportunity)
+        return [next, ...previous]
+      })
+      return true
+    },
+    [credits]
+  )
 
   const deleteOpportunity = useCallback((id: string) => {
     setOpportunities((prev) => prev.filter((o) => o.opportunityId !== id))
@@ -230,7 +257,7 @@ export function OpportunitiesProvider({ children }: { children: ReactNode }) {
       creditLimit: CREDIT_LIMIT,
       setCredits,
       getOpportunity,
-      createOpportunityFromRfp,
+      createOpportunityWithEngineRuns,
       deleteOpportunity,
       convertOpportunityToProject,
       updateOpportunity,
@@ -244,7 +271,7 @@ export function OpportunitiesProvider({ children }: { children: ReactNode }) {
       projects,
       credits,
       getOpportunity,
-      createOpportunityFromRfp,
+      createOpportunityWithEngineRuns,
       deleteOpportunity,
       convertOpportunityToProject,
       updateOpportunity,

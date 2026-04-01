@@ -93,6 +93,8 @@ export default function OpportunityDetailPage() {
   const [tab, setTab] = useState<OpportunityDetailTab>("Dealbreaker")
   const [showGapConfirmModal, setShowGapConfirmModal] = useState(false)
   const [showFitPrereqModal, setShowFitPrereqModal] = useState(false)
+  const [showDealbreakerConfirmModal, setShowDealbreakerConfirmModal] =
+    useState(false)
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -106,9 +108,16 @@ export default function OpportunityDetailPage() {
     router.push("/")
   }
 
-  const runDealbreaker = () => {
-    if (opportunity) {
-      commitDealbreakerRun(opportunity.opportunityId)
+  const openDealbreakerConfirm = () => {
+    if (opportunity?.dealbreaker === "Pending") {
+      setShowDealbreakerConfirmModal(true)
+    }
+  }
+
+  const confirmDealbreakerRun = () => {
+    if (!opportunity) return
+    if (commitDealbreakerRun(opportunity.opportunityId)) {
+      setShowDealbreakerConfirmModal(false)
     }
   }
 
@@ -293,7 +302,7 @@ export default function OpportunityDetailPage() {
                       </Button>
                     ) : null}
                     {opportunity.dealbreaker === "Pending" ? (
-                      <Button size="sm" onClick={runDealbreaker}>
+                      <Button size="sm" onClick={openDealbreakerConfirm}>
                         Run Dealbreaker Screening
                       </Button>
                     ) : null}
@@ -700,6 +709,26 @@ export default function OpportunityDetailPage() {
               ) : null}
             </div>
           </section>
+
+          {showDealbreakerConfirmModal ? (
+            <CreditConfirmOverlay
+              title="Run Dealbreaker screening"
+              description="Dealbreaker screening uses credits. Confirm to run and deduct from your balance."
+              rows={[
+                {
+                  label: "Dealbreaker screening",
+                  value: `${DEALBREAKER_CREDITS} credits`,
+                },
+              ]}
+              totalCredits={DEALBREAKER_CREDITS}
+              balance={credits}
+              afterBalance={Math.max(0, credits - DEALBREAKER_CREDITS)}
+              confirmLabel="Run Dealbreaker"
+              confirmDisabled={credits < DEALBREAKER_CREDITS}
+              onCancel={() => setShowDealbreakerConfirmModal(false)}
+              onConfirm={confirmDealbreakerRun}
+            />
+          ) : null}
 
           {showFitPrereqModal ? (
             <CreditConfirmOverlay

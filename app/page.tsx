@@ -1,15 +1,15 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
+import { type ChangeEvent, useRef, useState } from "react"
 import {
   Bell,
   CircleEllipsis,
+  FileUp,
   FolderOpen,
   Search,
   Sparkles,
   Trash2,
-  Upload,
 } from "lucide-react"
 
 import { AppSidebar, type SidebarPage } from "@/components/app-sidebar"
@@ -18,9 +18,11 @@ import { Button } from "@/components/ui/button"
 import {
   DEALBREAKER_CREDITS,
   FIT_CREDITS,
+  FULL_V8_PIPELINE_CREDITS,
   GAP_CREDITS,
 } from "@/lib/engine-credits"
 import {
+  type CreateOpportunityEngineMode,
   fitBundleCredits,
   gapBundleCredits,
   useOpportunities,
@@ -33,6 +35,12 @@ type ListTab = "Projects" | "Pipeline"
 
 type HomeModal =
   | { kind: "create-project" }
+  | {
+      kind: "new-opportunity"
+      fileName: string
+      runMode: CreateOpportunityEngineMode
+    }
+  | { kind: "db-run"; opportunityId: string }
   | { kind: "fit-prereq"; opportunityId: string }
   | { kind: "gap-run"; opportunityId: string }
   | null
@@ -54,7 +62,7 @@ export default function Page() {
     projects,
     credits,
     creditLimit,
-    createOpportunityFromRfp,
+    createOpportunityWithEngineRuns,
     deleteOpportunity,
     commitDealbreakerRun,
     commitFitBundle,
@@ -64,15 +72,27 @@ export default function Page() {
   const [activePage, setActivePage] = useState<SidebarPage>("Projects")
   const [listTab, setListTab] = useState<ListTab>("Projects")
   const [modal, setModal] = useState<HomeModal>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const uploadRfp = () => {
-    createOpportunityFromRfp()
+  const openOpportunityFilePicker = () => {
+    fileInputRef.current?.click()
+  }
+
+  const onOpportunityFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
     setListTab("Pipeline")
     setActivePage("Projects")
+    setModal({
+      kind: "new-opportunity",
+      fileName: file.name,
+      runMode: "dealbreaker-only",
+    })
   }
 
   const handleRunDealbreaker = (opportunityId: string) => {
-    commitDealbreakerRun(opportunityId)
+    setModal({ kind: "db-run", opportunityId })
   }
 
   const handleRunFit = (opportunityId: string) => {
@@ -102,9 +122,29 @@ export default function Page() {
   }
 
   const modalOpp =
-    modal && modal.kind !== "create-project"
+    modal &&
+    modal.kind !== "create-project" &&
+    modal.kind !== "new-opportunity"
       ? opportunities.find((o) => o.opportunityId === modal.opportunityId)
       : undefined
+
+  const newOppTotalCredits =
+    modal?.kind === "new-opportunity"
+      ? modal.runMode === "dealbreaker-only"
+        ? DEALBREAKER_CREDITS
+        : FULL_V8_PIPELINE_CREDITS
+      : 0
+
+  const newOppCreditRows =
+    modal?.kind === "new-opportunity"
+      ? modal.runMode === "dealbreaker-only"
+        ? [{ label: "Dealbreaker screening", value: `${DEALBREAKER_CREDITS} credits` }]
+        : [
+            { label: "Dealbreaker screening", value: `${DEALBREAKER_CREDITS} credits` },
+            { label: "Fit assessment", value: `${FIT_CREDITS} credits` },
+            { label: "Gap & Strategy analysis", value: `${GAP_CREDITS} credits` },
+          ]
+      : []
 
   const showProjectWorkspace = activePage === "Projects"
   const pageTitle = activePage
@@ -114,6 +154,14 @@ export default function Page() {
       <AppSidebar activePage={activePage} onPageChange={setActivePage} />
 
       <main className="flex min-w-0 flex-1 flex-col">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          className="hidden"
+          aria-hidden
+          onChange={onOpportunityFileChange}
+        />
         <header className="flex h-14 items-center justify-between border-b px-4">
           <div className="flex items-center gap-2">
             <FolderOpen className="h-4 w-4 text-muted-foreground" />
@@ -174,9 +222,9 @@ export default function Page() {
                     Create Project
                   </Button>
                 ) : (
-                  <Button size="sm" className="h-9 gap-2" onClick={uploadRfp}>
-                    <Upload className="h-4 w-4" />
-                    Upload RFP
+                  <Button size="sm" className="h-9 gap-2" onClick={openOpportunityFilePicker}>
+                    <FileUp className="h-4 w-4" />
+                    Create opportunity
                   </Button>
                 )}
               </div>
@@ -389,9 +437,10 @@ export default function Page() {
             <p className="text-base font-semibold">Create project</p>
             <p className="mt-2 text-sm text-muted-foreground">
               In this prototype, new work starts in the Pipeline. Switch to the Pipeline
-              tab and use <span className="font-medium text-foreground">Upload RFP</span>{" "}
-              to create an opportunity, then run the V8 engines and convert to a project
-              when you are ready.
+              tab and use{" "}
+              <span className="font-medium text-foreground">Create opportunity</span> to
+              upload a file, then run the V8 engines and convert to a project when you are
+              ready.
             </p>
             <div className="mt-4 flex justify-end">
               <Button size="sm" onClick={() => setModal(null)}>
@@ -400,6 +449,98 @@ export default function Page() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {modal?.kind === "new-opportunity" ? (
+        <CreditConfirmOverlay
+          title="Create opportunity"
+          description={`File: ${modal.fileName}. Choose how to run the V8 engine. You are charged the total shown below; the full pipeline runs Dealbreaker, then Fit (if GO), then Gap (if Fit completes).`}
+          rows={newOppCreditRows}
+          totalCredits={newOppTotalCredits}
+          balance={credits}
+          afterBalance={Math.max(0, credits - newOppTotalCredits)}
+          confirmLabel="Create & run"
+          confirmDisabled={credits < newOppTotalCredits}
+          onCancel={() => setModal(null)}
+          onConfirm={() => {
+            if (
+              createOpportunityWithEngineRuns(modal.fileName, modal.runMode)
+            ) {
+              setModal(null)
+            }
+          }}
+        >
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() =>
+                setModal((m) =>
+                  m?.kind === "new-opportunity"
+                    ? { ...m, runMode: "dealbreaker-only" }
+                    : m
+                )
+              }
+              className={cn(
+                "w-full rounded-lg border p-3 text-left text-sm transition outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring",
+                modal.runMode === "dealbreaker-only"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:bg-muted/40"
+              )}
+            >
+              <p className="font-medium">Dealbreaker only</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Run screening first. Run Fit and Gap later from the Pipeline.
+              </p>
+              <p className="mt-2 text-xs font-semibold text-primary">
+                {DEALBREAKER_CREDITS} credit
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setModal((m) =>
+                  m?.kind === "new-opportunity" ? { ...m, runMode: "full-v8" } : m
+                )
+              }
+              className={cn(
+                "w-full rounded-lg border p-3 text-left text-sm transition outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring",
+                modal.runMode === "full-v8"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:bg-muted/40"
+              )}
+            >
+              <p className="font-medium">Full pipeline</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Run Dealbreaker, then Fit, then Gap in sequence (later steps skip if
+                Dealbreaker is NO-GO). Bundle price is charged upfront.
+              </p>
+              <p className="mt-2 text-xs font-semibold text-primary">
+                {FULL_V8_PIPELINE_CREDITS} credits total
+              </p>
+            </button>
+          </div>
+        </CreditConfirmOverlay>
+      ) : null}
+
+      {modal?.kind === "db-run" && modalOpp ? (
+        <CreditConfirmOverlay
+          title="Run Dealbreaker screening"
+          description="Dealbreaker screening uses credits. Confirm to run and deduct from your balance."
+          rows={[
+            { label: "Dealbreaker screening", value: `${DEALBREAKER_CREDITS} credits` },
+          ]}
+          totalCredits={DEALBREAKER_CREDITS}
+          balance={credits}
+          afterBalance={Math.max(0, credits - DEALBREAKER_CREDITS)}
+          confirmLabel="Run Dealbreaker"
+          confirmDisabled={credits < DEALBREAKER_CREDITS}
+          onCancel={() => setModal(null)}
+          onConfirm={() => {
+            if (commitDealbreakerRun(modal.opportunityId)) {
+              setModal(null)
+            }
+          }}
+        />
       ) : null}
 
       {modal?.kind === "fit-prereq" && modalOpp ? (

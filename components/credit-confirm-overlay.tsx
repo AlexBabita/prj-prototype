@@ -1,5 +1,7 @@
 "use client"
 
+import type { ReactNode } from "react"
+
 import { Button } from "@/components/ui/button"
 
 type Row = { label: string; value: string }
@@ -7,6 +9,7 @@ type Row = { label: string; value: string }
 export function CreditConfirmOverlay({
   title,
   description,
+  children,
   rows,
   totalCredits,
   balance,
@@ -18,6 +21,7 @@ export function CreditConfirmOverlay({
 }: {
   title: string
   description: string
+  children?: ReactNode
   rows: Row[]
   totalCredits: number
   balance: number
@@ -32,6 +36,7 @@ export function CreditConfirmOverlay({
       <div className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl">
         <p className="text-base font-semibold">{title}</p>
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        {children ? <div className="mt-4">{children}</div> : null}
         <div className="mt-4 space-y-2 rounded-md border bg-background p-3 text-sm">
           {rows.map((row) => (
             <div key={row.label} className="flex items-center justify-between gap-2">
